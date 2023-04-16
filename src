@@ -1,0 +1,156 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+from sklearn.metrics import confusion_matrix, accuracy_score, classification_report
+
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier, BaggingClassifier, VotingClassifier
+from sklearn.naive_bayes import GaussianNB
+import xgboost as xgb
+
+from sklearn import model_selection
+from sklearn.linear_model import LogisticRegression
+from mlxtend.classifier import StackingClassifier
+
+filePath = '/Users/Yousuf/Desktop/heart2.csv'
+data = pd.read_csv(filePath)
+
+print("(Rows, columns): " + str(data.shape))
+
+# returns the number of unique values for each variable.
+data.nunique(axis=0)
+
+# summarizes the count, mean, standard deviation, min, and max for numeric variables.
+data.describe()
+
+# Display the Missing Values
+print(data.isna().sum())
+
+print(data['target'].value_counts())
+
+# calculate correlation matrix
+
+# Heatmap
+corr = data.corr()
+plt.subplots(figsize=(15, 10))
+sns.heatmap(corr, xticklabels=corr.columns, yticklabels=corr.columns, annot=True,
+            cmap=sns.diverging_palette(220, 20, as_cmap=True))
+
+sns.catplot(x="target", y="oldpeak", hue="slope", kind="bar", data=data);
+
+plt.title('ST depression (induced by exercise relative to rest) vs. Heart Disease',size=25)
+plt.xlabel('Heart Disease',size=20)
+plt.ylabel('ST depression',size=20)
+
+# ST depression (induced by exercise relative to rest) vs. Heart Disease
+plt.title('ST depression (induced by exercise relative to rest) vs. Heart Disease', size=25)
+plt.xlabel('Heart Disease', size=20)
+plt.ylabel('ST depression', size=20)
+
+
+plt.figure(figsize=(12, 8))
+sns.boxplot(x='target', y='thalach', hue="sex", data=data)
+plt.title("ST depression Level vs. Heart Disease", fontsize=20)
+plt.xlabel("Heart Disease Target", fontsize=16)
+plt.ylabel("ST depression induced by exercise relative to rest", fontsize=16)
+
+plt.show()
+
+# Filtering data by NEGATIVE Heart Disease patient
+neg_data = data[data['target'] == 0]
+neg_data.describe()
+
+# Filtering data by POSITIVE Heart Disease patient
+pos_data = data[data['target'] == 1]
+pos_data.describe()
+
+print("(Positive Patients ST depression): " + str(pos_data['oldpeak'].mean()))
+print("(Negative Patients ST depression): " + str(neg_data['oldpeak'].mean()))
+
+print("(Positive Patients thalach): " + str(pos_data['thalach'].mean()))
+print("(Negative Patients thalach): " + str(neg_data['thalach'].mean()))
+
+X = data.iloc[:, :-1].values
+y = data.iloc[:, -1].values
+
+x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
+
+sc = StandardScaler()
+x_train = sc.fit_transform(x_train)
+x_test = sc.transform(x_test)
+
+print("K-Nearest Neighbour:\n")
+
+model1 = KNeighborsClassifier()  # get instance of model
+model1.fit(x_train, y_train)  # Train/Fit model
+
+y_pred1 = model1.predict(x_test)  # get y predictions
+print(classification_report(y_test, y_pred1))  # output accuracy
+
+cm1 = confusion_matrix(y_test, y_pred1)
+print(cm1)
+print(accuracy_score(y_test, y_pred1) * 100, "%")
+
+print("Random Forest Classifier:\n")
+
+model2 = RandomForestClassifier(random_state=1)  # get instance of model
+model2.fit(x_train, y_train)  # Train/Fit model
+
+y_pred2 = model2.predict(x_test)  # get y predictions
+print(classification_report(y_test, y_pred2))  # output accuracy
+
+cm2 = confusion_matrix(y_test, y_pred2)
+print(cm2)
+print(accuracy_score(y_test, y_pred2) * 100, "%")
+
+print("Naive Bayes Classifier:\n")
+
+model3 = GaussianNB()  # get instance of model
+model3.fit(x_train, y_train)  # Train/Fit model
+
+y_pred3 = model3.predict(x_test)  # get y predictions
+print(classification_report(y_test, y_pred3))  # output accuracy
+
+cm3 = confusion_matrix(y_test, y_pred3)
+print(cm3)
+print(accuracy_score(y_test, y_pred3) * 100, "%\n")
+
+final_model = VotingClassifier(estimators=[('knn', model1), ('rf', model2), ('nbc', model3)], voting='hard')
+final_model.fit(x_train, y_train)
+pred_voting = final_model.predict(x_test)
+
+print("Accuracy Score of Max Voting Model: {}%\n".format(accuracy_score(y_test, pred_voting) * 100, "%"))
+
+lr = LogisticRegression()  # defining meta-classifier
+clf_stack = StackingClassifier(classifiers=[model1, model2, model3], meta_classifier=lr, use_probas=True,
+                               use_features_in_secondary=True)
+model_stack = clf_stack.fit(x_train, y_train)  # training of stacked model
+pred_stack = model_stack.predict(x_test)  # predictions on test data using stacked model
+acc_stack = accuracy_score(y_test, pred_stack)  # evaluating accuracy
+print('Accuracy score of Stacking model: {}%\n'.format(acc_stack * 100))
+
+seed = 8
+kfold = model_selection.KFold(n_splits=3, shuffle=True,  random_state=seed)
+model = BaggingClassifier(base_estimator=model1, n_estimators=500, random_state=1)
+results = model_selection.cross_val_score(model, X, y, cv=kfold)
+print("Accuracy of Bagging Model :{}%\n".format(results.mean()*100))
+
+model_xgb = xgb.XGBClassifier()
+model_xgb.fit(x_train, y_train)
+pred_boosting = model_xgb.predict(x_test)
+
+cm7 = confusion_matrix(y_test, pred_boosting)
+print(cm7)
+print("Accuracy of Boosting Model: {}%".format(accuracy_score(y_test, pred_boosting) * 100, "%"))
+
+importance = model2.feature_importances_
+
+index= data.columns[:-1]
+importance = pd.Series(model2.feature_importances_, index=index)
+importance.nlargest(13).plot(kind='barh', colormap='winter')
+
+plt.show()
